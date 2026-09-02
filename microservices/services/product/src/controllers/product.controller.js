@@ -1,16 +1,15 @@
-const Product = require('../models/Product');
-const { ok, fail } = require('../utils/apiResponse');
+const Product = require("../models/Product");
+const { ok, fail } = require("../utils/apiResponse");
 const {
   pagination,
   buildProductFilter,
   productSort,
-} = require('../services/query.service');
+} = require("../services/query.service");
 
 const {
   getVendorByUserId,
   getAllVendors,
-} = require('../services/vendor.service');
-
+} = require("../services/vendor.service");
 
 async function list(req, res) {
   const { page, limit, skip } = pagination(req);
@@ -37,16 +36,12 @@ async function list(req, res) {
   const vendors = await getAllVendors();
 
   const vendorMap = new Map(
-    vendors.map((vendor) => [
-      String(vendor.userId),
-      vendor,
-    ]),
+    vendors.map((vendor) => [String(vendor.userId), vendor]),
   );
 
   const productsWithVendor = items.map((product) => ({
     ...product,
-    vendor:
-      vendorMap.get(String(product.vendorId)) || null,
+    vendor: vendorMap.get(String(product.vendorId)) || null,
   }));
 
   return ok(res, {
@@ -58,18 +53,11 @@ async function list(req, res) {
   });
 }
 
-
 async function getById(req, res) {
-  const product = await Product
-    .findById(req.params.id)
-    .lean();
+  const product = await Product.findById(req.params.id).lean();
 
   if (!product) {
-    return fail(
-      res,
-      'Product not found.',
-      404,
-    );
+    return fail(res, "Product not found.", 404);
   }
 
   /*
@@ -77,9 +65,7 @@ async function getById(req, res) {
    * through the Vendor Service using the Product.vendorId,
    * which is the user's ID.
    */
-  const vendor = await getVendorByUserId(
-    product.vendorId,
-  );
+  const vendor = await getVendorByUserId(product.vendorId);
 
   return ok(res, {
     ...product,
@@ -87,21 +73,14 @@ async function getById(req, res) {
   });
 }
 
-
 async function create(req, res) {
   const product = await Product.create({
     ...req.body,
     vendorId: req.user._id,
   });
 
-  return ok(
-    res,
-    product,
-    'Product created.',
-    201,
-  );
+  return ok(res, product, "Product created.", 201);
 }
-
 
 async function update(req, res) {
   const product = await Product.findOneAndUpdate(
@@ -117,20 +96,11 @@ async function update(req, res) {
   );
 
   if (!product) {
-    return fail(
-      res,
-      'Product not found or not owned by you.',
-      404,
-    );
+    return fail(res, "Product not found or not owned by you.", 404);
   }
 
-  return ok(
-    res,
-    product,
-    'Product updated.',
-  );
+  return ok(res, product, "Product updated.");
 }
-
 
 async function remove(req, res) {
   const product = await Product.findOneAndDelete({
@@ -139,32 +109,17 @@ async function remove(req, res) {
   });
 
   if (!product) {
-    return fail(
-      res,
-      'Product not found or not owned by you.',
-      404,
-    );
+    return fail(res, "Product not found or not owned by you.", 404);
   }
 
-  return ok(
-    res,
-    null,
-    'Product deleted.',
-  );
+  return ok(res, null, "Product deleted.");
 }
-
 
 async function updateStock(req, res) {
   const stock = Number(req.body.stock);
 
-  if (
-    !Number.isInteger(stock) ||
-    stock < 0
-  ) {
-    return fail(
-      res,
-      'Stock must be a non-negative integer.',
-    );
+  if (!Number.isInteger(stock) || stock < 0) {
+    return fail(res, "Stock must be a non-negative integer.");
   }
 
   const product = await Product.findOneAndUpdate(
@@ -182,49 +137,27 @@ async function updateStock(req, res) {
   );
 
   if (!product) {
-    return fail(
-      res,
-      'Product not found or not owned by you.',
-      404,
-    );
+    return fail(res, "Product not found or not owned by you.", 404);
   }
 
-  return ok(
-    res,
-    product,
-    'Stock updated.',
-  );
+  return ok(res, product, "Stock updated.");
 }
 
-
 async function internalGet(req, res) {
-  const product = await Product
-    .findById(req.params.id)
-    .lean();
+  const product = await Product.findById(req.params.id).lean();
 
   if (!product) {
-    return fail(
-      res,
-      'Product not found.',
-      404,
-    );
+    return fail(res, "Product not found.", 404);
   }
 
   return ok(res, product);
 }
 
-
 async function internalReserve(req, res) {
   const { items } = req.body;
 
-  if (
-    !Array.isArray(items) ||
-    !items.length
-  ) {
-    return fail(
-      res,
-      'items are required.',
-    );
+  if (!Array.isArray(items) || !items.length) {
+    return fail(res, "items are required.");
   }
 
   const session = await Product.startSession();
@@ -234,24 +167,23 @@ async function internalReserve(req, res) {
 
     await session.withTransaction(async () => {
       for (const item of items) {
-        const product =
-          await Product.findOneAndUpdate(
-            {
-              _id: item.productId,
-              stock: {
-                $gte: item.quantity,
-              },
+        const product = await Product.findOneAndUpdate(
+          {
+            _id: item.productId,
+            stock: {
+              $gte: item.quantity,
             },
-            {
-              $inc: {
-                stock: -item.quantity,
-              },
+          },
+          {
+            $inc: {
+              stock: -item.quantity,
             },
-            {
-              new: true,
-              session,
-            },
-          );
+          },
+          {
+            new: true,
+            session,
+          },
+        );
 
         if (!product) {
           const error = new Error(
@@ -267,25 +199,17 @@ async function internalReserve(req, res) {
       }
     });
 
-    return ok(
-      res,
-      result,
-      'Stock reserved.',
-    );
+    return ok(res, result, "Stock reserved.");
   } finally {
     await session.endSession();
   }
 }
 
-
 async function internalRelease(req, res) {
   const { items } = req.body;
 
   if (!Array.isArray(items)) {
-    return fail(
-      res,
-      'items are required.',
-    );
+    return fail(res, "items are required.");
   }
 
   await Product.bulkWrite(
@@ -303,44 +227,30 @@ async function internalRelease(req, res) {
     })),
   );
 
-  return ok(
-    res,
-    null,
-    'Stock released.',
-  );
+  return ok(res, null, "Stock released.");
 }
 
-
 async function internalRating(req, res) {
-  const {
-    rating,
-    reviewCount,
-  } = req.body;
+  const { rating, reviewCount } = req.body;
 
-  const product =
-    await Product.findByIdAndUpdate(
-      req.params.id,
-      {
-        rating: Number(rating) || 0,
-        reviewCount: Number(reviewCount) || 0,
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    {
+      rating: Number(rating) || 0,
+      reviewCount: Number(reviewCount) || 0,
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  );
 
   if (!product) {
-    return fail(
-      res,
-      'Product not found.',
-      404,
-    );
+    return fail(res, "Product not found.", 404);
   }
 
   return ok(res, product);
 }
-
 
 module.exports = {
   list,

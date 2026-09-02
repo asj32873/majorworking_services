@@ -107,27 +107,89 @@ async function create(req, res) {
   ok(res, created, "Review submitted successfully.", 201);
 }
 
+// async function update(req, res) {
+//   const r = await Review.findOne({ _id: req.params.id, userId: req.user.id });
+//   if (!r) return fail(res, "Review not found.", 404);
+//   r.rating = Number(req.body.rating);
+//   r.review = req.body.review.trim();
+//   if (!Number.isInteger(r.rating) || r.rating < 1 || r.rating > 5)
+//     return fail(res, "Rating must be an integer between 1 and 5.", 400);
+//   await r.save();
+//   await recalc(r.productId);
+//   notifyRag(r.productId);
+//   ok(res, r, "Review updated successfully.");
+// }
+
+
 async function update(req, res) {
-  const r = await Review.findOne({ _id: req.params.id, userId: req.user.id });
+  const userId =
+    req.auth?.id ||
+    req.user?.id ||
+    req.user?._id?.toString();
+
+  if (!userId) {
+    return fail(res, "Authenticated user ID not found.", 401);
+  }
+
+  const r = await Review.findOne({
+    _id: req.params.id,
+    userId,
+  });
+
   if (!r) return fail(res, "Review not found.", 404);
+
   r.rating = Number(req.body.rating);
   r.review = req.body.review.trim();
-  if (!Number.isInteger(r.rating) || r.rating < 1 || r.rating > 5)
+
+  if (!Number.isInteger(r.rating) || r.rating < 1 || r.rating > 5) {
     return fail(res, "Rating must be an integer between 1 and 5.", 400);
+  }
+
   await r.save();
+
   await recalc(r.productId);
   notifyRag(r.productId);
+
   ok(res, r, "Review updated successfully.");
 }
+
+// async function remove(req, res) {
+//   const filter =
+//     req.user.role === "ADMIN"
+//       ? { _id: req.params.id }
+//       : { _id: req.params.id, userId: req.user.id };
+//   const r = await Review.findOneAndDelete(filter);
+//   if (!r) return fail(res, "Review not found.", 404);
+//   await recalc(r.productId);
+//   notifyRag(r.productId);
+//   ok(res, null, "Review deleted successfully.");
+// }
+
+
 async function remove(req, res) {
+  const userId =
+    req.auth?.id ||
+    req.user?.id ||
+    req.user?._id?.toString();
+
+  if (!userId) {
+    return fail(res, "Authenticated user ID not found.", 401);
+  }
+
   const filter =
     req.user.role === "ADMIN"
       ? { _id: req.params.id }
-      : { _id: req.params.id, userId: req.user.id };
+      : { _id: req.params.id, userId };
+
   const r = await Review.findOneAndDelete(filter);
+
   if (!r) return fail(res, "Review not found.", 404);
+
   await recalc(r.productId);
   notifyRag(r.productId);
+
   ok(res, null, "Review deleted successfully.");
 }
+
+
 module.exports = { listForProduct, create, update, remove };

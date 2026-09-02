@@ -343,7 +343,37 @@ async function adminList(req, res) {
   }
 }
 
+// async function adminUpdateStatus(req, res) {
+//   const item = await OrderItem.findOne({
+//     _id: req.params.itemId,
+//     orderId: req.params.orderId,
+//   });
+
+//   if (!item) {
+//     return fail(res, "Order item not found.", 404);
+//   }
+
+//   item.vendorStatus = req.body.status;
+
+//   await item.save();
+
+//   await History.create({
+//     orderId: item.orderId,
+//     orderItemId: item._id,
+//     status: item.vendorStatus,
+//     updatedBy: req.user.id,
+//     remarks: req.body.remarks,
+//   });
+
+//   await refreshOrderStatus(item.orderId);
+
+//   ok(res, item, "Order item status updated.");
+// }
+
+
 async function adminUpdateStatus(req, res) {
+  const userId = req.user?._id || req.user?.id;
+
   const item = await OrderItem.findOne({
     _id: req.params.itemId,
     orderId: req.params.orderId,
@@ -361,7 +391,7 @@ async function adminUpdateStatus(req, res) {
     orderId: item.orderId,
     orderItemId: item._id,
     status: item.vendorStatus,
-    updatedBy: req.user.id,
+    updatedBy: userId,
     remarks: req.body.remarks,
   });
 
@@ -369,6 +399,7 @@ async function adminUpdateStatus(req, res) {
 
   ok(res, item, "Order item status updated.");
 }
+
 
 async function refreshOrderStatus(orderId) {
   const items = await OrderItem.find({
