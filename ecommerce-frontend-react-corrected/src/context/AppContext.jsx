@@ -933,6 +933,8 @@ export function AppProvider({ children }) {
       rejectVendor,
       deleteVendor,
 
+      updateUserStatus,
+
       addresses,
       addAddress,
       updateAddress,
@@ -959,6 +961,7 @@ export function AppProvider({ children }) {
       products,
       issues,
       vendors,
+      updateUserStatus,
       addresses,
       reviews,
     ],

@@ -1,0 +1,184 @@
+﻿===== app.js =====
+const express=require('express');const cors=require('cors');const helmet=require('helmet');const morgan=require('morgan');const rateLimit=require('express-rate-limit');
+const routes=require('./routes');const {notFound,errorHandler}=require('./middleware/error');
+const app=express();app.use(helmet());app.use(cors({origin:process.env.FRONTEND_URL||'http://localhost:5173',credentials:true,methods:['GET','POST','PUT','PATCH','DELETE','OPTIONS'],allowedHeaders:['Content-Type','Authorization','x-internal-service-token']}));
+app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:true}));app.use(morgan(process.env.NODE_ENV==='production'?'combined':'dev'));app.use('/api',rateLimit({windowMs:15*60*1000,limit:3000,standardHeaders:true,legacyHeaders:false}));
+app.get('/health',(req,res)=>res.json({success:true,service:'shopsphere-admin',timestamp:new Date().toISOString()}));app.use('/',routes);app.use(notFound);app.use(errorHandler);module.exports=app;
+
+===== db.js =====
+const mongoose = require('mongoose');
+async function connectDB(){
+  const uri=process.env.MONGODB_URI;
+  if(!uri) throw new Error('MONGODB_URI is not configured');
+  mongoose.set('strictQuery',true);
+  await mongoose.connect(uri);
+  console.log(`MongoDB connected: ${mongoose.connection.host}/${mongoose.connection.name}`);
+}
+module.exports=connectDB;
+
+===== env.js =====
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../../../.env') });
+
+function getEnv(name, fallback = undefined) {
+  return process.env[name] ?? fallback;
+}
+
+module.exports = { getEnv };
+
+===== admin.controller.js =====
+const {getJson,patchJson}=require('../utils/serviceClient');const {ok,fail}=require('../utils/apiResponse');const AUTH=()=>process.env.AUTH_SERVICE_URL||'http://localhost:5002';const VENDOR=()=>process.env.VENDOR_SERVICE_URL||'http://localhost:5012';const PRODUCT=()=>process.env.PRODUCT_SERVICE_URL||'http://localhost:5003';const ORDER=()=>process.env.ORDER_SERVICE_URL||'http://localhost:5005';const SUPPORT=()=>process.env.SUPPORT_SERVICE_URL||'http://localhost:5011';
+async function dashboard(req,res){const [u,v,p,o]=await Promise.all([getJson(AUTH(),'/internal/admin/users'),getJson(VENDOR(),'/internal/vendors'),getJson(PRODUCT(),'/api/products?limit=1'),getJson(ORDER(),'/api/orders/admin/list',{'authorization':req.headers.authorization||''})]);ok(res,{users:u.data?.data?.length||0,vendors:v.data?.data?.length||0,products:p.data?.data?.total||0,orders:o.data?.data?.length||0});}
+async function vendors(req,res){const r=await getJson(VENDOR(),'/internal/vendors');if(!r.ok)return res.status(r.status).json(r.data);ok(res,r.data.data);}
+async function approveVendor(req,res){const r=await patchJson(VENDOR(),`/internal/vendors/${req.params.id}`,{status:'VERIFIED',verifiedAt:new Date()});if(!r.ok)return res.status(r.status).json(r.data);ok(res,r.data.data,'Vendor approved.');}
+async function rejectVendor(req,res){const r=await patchJson(VENDOR(),`/internal/vendors/${req.params.id}`,{status:'REJECTED',verifiedAt:null});if(!r.ok)return res.status(r.status).json(r.data);ok(res,r.data.data,'Vendor rejected.');}
+async function deleteVendor(req,res){const vr=await getJson(VENDOR(),'/internal/vendors');const v=(vr.data?.data||[]).find(x=>String(x._id)===String(req.params.id));if(!v)return fail(res,'Vendor not found.',404);await patchJson(AUTH(),`/internal/users/${v.userId}`,{status:'DISABLED'});const r=await fetch(`${VENDOR()}/internal/vendors/${req.params.id}`,{method:'DELETE',headers:{'x-internal-service-token':process.env.INTERNAL_SERVICE_TOKEN||''}});const d=await r.json();if(!r.ok)return res.status(r.status).json(d);ok(res,null,'Vendor deleted.');}
+async function users(req,res){const r=await getJson(AUTH(),'/internal/admin/users');if(!r.ok)return res.status(r.status).json(r.data);ok(res,r.data.data);}
+async function updateUserStatus(req,res){if(req.params.id===req.user.id)return fail(res,'You cannot disable your own admin account.',400);if(!['ACTIVE','DISABLED'].includes(req.body.status))return fail(res,'Invalid user status.');const r=await patchJson(AUTH(),`/internal/users/${req.params.id}`,{status:req.body.status});if(!r.ok)return res.status(r.status).json(r.data);ok(res,r.data.data,'User status updated.');}
+async function issues(req,res){const r=await getJson(SUPPORT(),'/api/issues',{'authorization':req.headers.authorization||''});if(!r.ok)return res.status(r.status).json(r.data);ok(res,r.data.data);}
+module.exports={dashboard,vendors,approveVendor,rejectVendor,deleteVendor,users,updateUserStatus,issues};
+
+===== auth.js =====
+const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
+const { getJson } = require('../utils/serviceClient');
+
+const auth0Domain = (process.env.AUTH0_DOMAIN || '')
+  .replace(/^https?:\/\//, '')
+  .replace(/\/$/, '');
+const auth0Audience = process.env.AUTH0_AUDIENCE;
+const auth0Issuer = auth0Domain ? `https://${auth0Domain}/` : null;
+const jwks = auth0Domain
+  ? jwksClient({
+      jwksUri: `https://${auth0Domain}/.well-known/jwks.json`,
+      cache: true,
+      cacheMaxEntries: 5,
+      cacheMaxAge: 10 * 60 * 1000,
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    })
+  : null;
+
+function signingKey(header, callback) {
+  if (!jwks) return callback(new Error('Auth0 is not configured.'));
+  if (!header?.kid) return callback(new Error('Token is missing kid.'));
+  jwks.getSigningKey(header.kid)
+    .then((key) => callback(null, key.getPublicKey()))
+    .catch(callback);
+}
+
+function verifyAuth0(token) {
+  return new Promise((resolve, reject) => {
+    jwt.verify(
+      token,
+      signingKey,
+      { algorithms: ['RS256'], audience: auth0Audience, issuer: auth0Issuer },
+      (error, payload) => (error ? reject(error) : resolve(payload)),
+    );
+  });
+}
+
+async function authenticate(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
+    const token = header.slice(7);
+    let identity;
+
+    if (auth0Domain && auth0Audience && token.split('.').length === 3) {
+      try {
+        identity = await verifyAuth0(token);
+      } catch {
+        identity = null;
+      }
+    }
+
+    if (!identity) {
+      identity = jwt.verify(token, process.env.JWT_SECRET);
+    }
+
+    const userId = identity.id || identity['https://shopsphere/user_id'];
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Token does not contain a user id.' });
+    }
+
+    const authService = process.env.AUTH_SERVICE_URL || 'http://localhost:5002';
+    const result = await getJson(authService, `/internal/users/${encodeURIComponent(userId)}`);
+
+    if (!result.ok || !result.data?.data) {
+      return res.status(401).json({ success: false, message: 'User account not found.' });
+    }
+
+    const user = result.data.data;
+    if (user.status === 'DISABLED') {
+      return res.status(403).json({ success: false, message: 'Account disabled.' });
+    }
+
+    req.user = user;
+    req.auth = { ...identity, id: String(userId) };
+    next();
+  } catch (error) {
+    console.error('AUTH ERROR:', error.message);
+    return res.status(401).json({ success: false, message: 'Invalid or expired token.' });
+  }
+}
+
+function authorize(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'You do not have permission for this resource.' });
+    }
+    next();
+  };
+}
+
+module.exports = { authenticate, authorize };
+
+===== error.js =====
+function notFound(req,res){res.status(404).json({success:false,message:`Route not found: ${req.method} ${req.originalUrl}`});}
+function errorHandler(err,req,res,next){
+ console.error(err);
+ if(err.name==='ValidationError') return res.status(400).json({success:false,message:'Validation error.',details:Object.values(err.errors).map(e=>e.message)});
+ if(err.code===11000) return res.status(409).json({success:false,message:'A record with a unique field already exists.',details:err.keyValue});
+ if(err.name==='CastError') return res.status(400).json({success:false,message:'Invalid resource ID.'});
+ res.status(err.status||500).json({success:false,message:err.status?err.message:'Internal server error.'});
+}
+module.exports={notFound,errorHandler};
+
+===== internal.js =====
+module.exports=(req,res,next)=>{const expected=process.env.INTERNAL_SERVICE_TOKEN;if(!expected || req.headers['x-internal-service-token']!==expected)return res.status(401).json({success:false,message:'Invalid internal service credentials.'});next();};
+
+===== validate.js =====
+module.exports=(schema,source='body')=>(req,res,next)=>{const result=schema.safeParse(req[source]);if(!result.success)return res.status(400).json({success:false,message:'Invalid request.',details:result.error.issues.map(i=>({path:i.path,message:i.message}))});req[source]=result.data;next();};
+
+===== index.js =====
+const router=require('express').Router();const c=require('../controllers/admin.controller');const {authenticate,authorize}=require('../middleware/auth');router.use(authenticate,authorize('ADMIN'));router.get('/api/admin/dashboard',c.dashboard);router.get('/api/admin/vendors',c.vendors);router.patch('/api/admin/vendors/:id/approve',c.approveVendor);router.patch('/api/admin/vendors/:id/reject',c.rejectVendor);router.delete('/api/admin/vendors/:id',c.deleteVendor);router.get('/api/admin/users',c.users);router.patch('/api/admin/users/:id/status',c.updateUserStatus);router.get('/api/admin/issues',c.issues);module.exports=router;
+
+===== server.js =====
+require('dotenv').config({path:require('path').resolve(__dirname,'../../../.env')});const app=require('./app');const connectDB=require('./config/db');const PORT=Number(process.env.PORT||5013);
+(async()=>{try{await connectDB();app.listen(PORT,'0.0.0.0',()=>console.log('ShopSphere admin service running on http://localhost:'+PORT));}catch(e){console.error('Startup failed:',e);process.exit(1);}})();
+
+===== apiResponse.js =====
+function ok(res,data,message='OK',status=200){return res.status(status).json({success:true,message,data});}
+function fail(res,message,status=400,details){return res.status(status).json({success:false,message,...(details?{details}:{})});}
+module.exports={ok,fail};
+
+===== serviceClient.js =====
+async function request(baseUrl,path,options={}){
+  const url=`${baseUrl.replace(/\/$/,'')}${path}`;
+  const headers={...(options.headers||{}),'x-internal-service-token':process.env.INTERNAL_SERVICE_TOKEN||''};
+  if(options.body && typeof options.body!=='string'){
+    headers['content-type']='application/json'; options.body=JSON.stringify(options.body);
+  }
+  const response=await fetch(url,{...options,headers});
+  const text=await response.text();
+  let data; try{data=text?JSON.parse(text):null}catch{data={success:false,message:text||'Invalid service response'};}
+  return {status:response.status,ok:response.ok,data};
+}
+async function getJson(baseUrl,path,headers={}){return request(baseUrl,path,{method:'GET',headers});}
+async function postJson(baseUrl,path,body,headers={}){return request(baseUrl,path,{method:'POST',body,headers});}
+async function patchJson(baseUrl,path,body,headers={}){return request(baseUrl,path,{method:'PATCH',body,headers});}
+module.exports={request,getJson,postJson,patchJson};
+

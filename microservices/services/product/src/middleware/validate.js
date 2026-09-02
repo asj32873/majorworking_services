@@ -1,1 +1,18 @@
-module.exports=(schema,source='body')=>(req,res,next)=>{const result=schema.safeParse(req[source]);if(!result.success)return res.status(400).json({success:false,message:'Invalid request.',details:result.error.issues.map(i=>({path:i.path,message:i.message}))});req[source]=result.data;next();};
+module.exports =
+  (schema, source = "body") =>
+  (req, res, next) => {
+    const result = schema.safeParse(req[source]);
+    if (!result.success)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Invalid request.",
+          details: result.error.issues.map((i) => ({
+            path: i.path,
+            message: i.message,
+          })),
+        });
+    req[source] = result.data;
+    next();
+  };

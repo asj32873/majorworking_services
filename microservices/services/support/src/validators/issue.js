@@ -1,6 +1,8 @@
 const { z } = require("zod");
 
-const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Invalid MongoDB ObjectId");
+const objectId = z
+  .string()
+  .regex(/^[a-f\d]{24}$/i, "Invalid MongoDB ObjectId");
 
 const createIssueSchema = z.object({
   orderId: z

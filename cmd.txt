@@ -11,7 +11,7 @@ Get-ChildItem -Path $src -Recurse -File -Filter "*.js" |
       } | Set-Content -LiteralPath $out -Encoding UTF8
 
 
-$src = "C:\Users\Administrator\Desktop\Python-practice\shopshere-microservices-\microservices\services\support"
+$src = "C:\Users\Administrator\Desktop\Python-practice\shopshere-microservices-\microservices\services\order"
 $out = Join-Path $src "notes.txt"
 
 Get-ChildItem -Path $src -Recurse -File -Filter "*.js" |

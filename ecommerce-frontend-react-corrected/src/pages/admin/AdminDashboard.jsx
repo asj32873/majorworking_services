@@ -9,7 +9,11 @@ export default function AdminDashboard() {
         <div className="row g-3">
           {[
             ["Users", users.length],
-            ["Vendors", vendors.length],
+            [
+              "Vendors",
+              vendors.length -
+                vendors.filter((v) => v.status === "APPLIED").length,
+            ],
             [
               "Pending Vendors",
               vendors.filter((v) => v.status === "APPLIED").length,

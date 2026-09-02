@@ -1,1 +1,15 @@
-const router=require('express').Router();const c=require('../controllers/admin.controller');const {authenticate,authorize}=require('../middleware/auth');router.use(authenticate,authorize('ADMIN'));router.get('/api/admin/dashboard',c.dashboard);router.get('/api/admin/vendors',c.vendors);router.patch('/api/admin/vendors/:id/approve',c.approveVendor);router.patch('/api/admin/vendors/:id/reject',c.rejectVendor);router.delete('/api/admin/vendors/:id',c.deleteVendor);router.get('/api/admin/users',c.users);router.patch('/api/admin/users/:id/status',c.updateUserStatus);router.get('/api/admin/issues',c.issues);module.exports=router;
+const router = require("express").Router();
+const c = require("../controllers/admin.controller");
+const { authenticate, authorize } = require("../middleware/auth");
+router.use(authenticate, authorize("ADMIN"));
+router.get("/api/admin/dashboard", c.dashboard);
+router.get("/api/admin/vendors", c.vendors);
+router.patch("/api/admin/vendors/:id/approve", c.approveVendor);
+router.patch("/api/admin/vendors/:id/reject", c.rejectVendor);
+router.delete("/api/admin/vendors/:id", c.deleteVendor);
+router.get("/api/admin/users", c.users);
+router.patch("/api/admin/users/:id/status", c.updateUserStatus);
+router.get("/api/admin/orders", c.orders);
+router.get("/api/admin/issues", c.issues);
+router.patch("/api/admin/issues/:id/assign", c.assignVendor);
+module.exports = router;

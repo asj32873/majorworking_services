@@ -91,7 +91,7 @@ async function getById(req, res) {
 async function create(req, res) {
   const product = await Product.create({
     ...req.body,
-    vendorId: req.user.id,
+    vendorId: req.user._id,
   });
 
   return ok(
@@ -107,7 +107,7 @@ async function update(req, res) {
   const product = await Product.findOneAndUpdate(
     {
       _id: req.params.id,
-      vendorId: req.user.id,
+      vendorId: req.user._id,
     },
     req.body,
     {
@@ -135,7 +135,7 @@ async function update(req, res) {
 async function remove(req, res) {
   const product = await Product.findOneAndDelete({
     _id: req.params.id,
-    vendorId: req.user.id,
+    vendorId: req.user._id,
   });
 
   if (!product) {
@@ -170,7 +170,7 @@ async function updateStock(req, res) {
   const product = await Product.findOneAndUpdate(
     {
       _id: req.params.id,
-      vendorId: req.user.id,
+      vendorId: req.user._id,
     },
     {
       stock,
